@@ -55,7 +55,7 @@ func TestNewTree00(t *testing.T) {
 	t.Log("tree.MerkleSize():", tree.MerkleSize())
 	t.Log("tree.NumLeaves():", tree.NumLeaves())
 
-	for i := 0; i < tree.Height(); i++ {
+	for i := 0; i < tree.Height()-1; i++ {
 		for j := 0; j < len(tree.mns[i]); j++ {
 			t.Logf("(i=%2d,j=%2d)%s%x", i, j, strings.Repeat(" ", (i+1)*4), tree.mns[i][j])
 		}

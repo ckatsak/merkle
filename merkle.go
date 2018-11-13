@@ -1,9 +1,11 @@
-//TODO Documentation
+// Package merkle implements a very simple, immutable, in-memory, "hash
+// function-agnostic" and "stored data-agnostic" merkle tree.
 package merkle
 
 import (
+	"bytes"
 	"crypto"
-	"fmt"
+	"sort"
 )
 
 //TODO Documentation
@@ -15,7 +17,14 @@ type Datum interface {
 type ErrHashUnavailable struct{}
 
 func (ErrHashUnavailable) Error() string {
-	return fmt.Sprintf("Hash Algorithm Unavailable")
+	return "Hash Algorithm Unavailable"
+}
+
+//TODO Documentation
+type ErrNoData struct{}
+
+func (ErrNoData) Error() string {
+	return "Nonexistent Data"
 }
 
 //TODO Documentation
@@ -25,22 +34,20 @@ type Tree struct {
 	tls  []treeLeaf
 }
 
-type treeLeaf struct {
-	digest []byte
-	datum  Datum
-}
-
 //TODO Documentation
 func (t *Tree) Height() int {
 	return len(t.mns) + 1
 }
 
 //TODO Documentation
+func (t *Tree) Size() int {
+	return t.MerkleSize() + t.NumLeaves()
+}
+
+//TODO Documentation
 func (t *Tree) MerkleSize() (merkleSize int) {
-	for i := 0; i < len(t.mns); i++ {
-		for j := 0; j < len(t.mns[i]); j++ {
-			merkleSize += 1
-		}
+	for i := range t.mns {
+		merkleSize += len(t.mns[i])
 	}
 	return
 }
@@ -51,20 +58,38 @@ func (t *Tree) NumLeaves() (numLeaves int) {
 }
 
 //TODO Documentation
+func (t *Tree) MerkleRoot() []byte {
+	return t.mns[0][0]
+}
+
+//TODO Documentation
 func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	if !hash.Available() {
 		return nil, ErrHashUnavailable{}
 	}
 	h := hash.New()
+
+	if len(data) == 0 {
+		return nil, ErrNoData{}
+	}
+
+	// Create the leaves.
 	tls := make([]treeLeaf, 0, len(data))
-	for _, datum := range data {
+	for i := range data {
+		serializedDatum := data[i].Serialize()
 		h.Reset()
-		h.Write(datum.Serialize())
+		h.Write(serializedDatum)
 		tls = append(tls, treeLeaf{
-			digest: h.Sum(nil),
-			datum:  datum,
+			digest:    h.Sum(nil),
+			datum:     serializedDatum,
+			orderedID: uint(i),
 		})
 	}
+	sort.Slice(tls, func(i, j int) bool {
+		return bytes.Compare(tls[i].datum, tls[j].datum) == -1
+	})
+
+	// Create the merkle nodes.
 	numMerkleNodes, rowSizes := calculateMerkleNumbers(len(data))
 	mnsSeq := make([]byte, 0, h.Size()*numMerkleNodes)
 	mns := make([][][]byte, len(rowSizes))
@@ -109,16 +134,87 @@ func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	}, nil
 }
 
-// TODO: Implementation
-// TODO: Documentation
-func (t *Tree) Verify(datum Datum) (bool, error) {
-	if datum == nil {
-		return false, fmt.Errorf("nil datum")
+//TODO Documentation
+func (t *Tree) VerifyDigest(digest []byte) (bool, error) {
+	for leafIndex := range t.tls {
+		if bytes.Compare(digest, t.tls[leafIndex].datum) == 0 {
+			return t.verify(leafIndex)
+		}
 	}
+	return false, ErrNoData{}
+}
+
+//TODO Documentation
+func (t *Tree) VerifyOrderedID(orderedID uint) (bool, error) {
+	for leafIndex := range t.tls {
+		if t.tls[leafIndex].orderedID == orderedID {
+			return t.verify(leafIndex)
+		}
+	}
+	return false, ErrNoData{}
+}
+
+//TODO Documentation
+func (t *Tree) VerifySerializedDatum(serializedDatum []byte) (bool, error) {
+	leafIndex := sort.Search(len(t.tls), func(i int) bool {
+		return bytes.Compare(t.tls[i].datum, serializedDatum) == 0
+	})
+	if leafIndex < len(t.tls) {
+		return t.verify(leafIndex)
+	}
+	return false, ErrNoData{}
+}
+
+//TODO Documentation
+func (t *Tree) VerifyDatum(datum Datum) (bool, error) {
+	if datum == nil {
+		return false, ErrNoData{}
+	}
+	return t.VerifySerializedDatum(datum.Serialize())
+}
+
+// TODO Implementation
+func (t *Tree) verify(leafIndex int) (bool, error) {
+	panic("Unimplemented")
+	currentLevel := len(t.mns)
+
 	h := t.hash.New()
 	h.Reset()
-	h.Write(datum.Serialize())
-	datumDigest := h.Sum(nil)
+	h.Write(t.tls[leafIndex].datum)
+	leafDigest := h.Sum(nil)
+
+	_, _ = leafDigest, currentLevel
+
+	return false, nil
+}
+
+//TODO Implementation
+//
+//TODO Documentation
+func (t *Tree) AppendAndReconstruct(data ...Datum) {
+	panic("Unimplemented")
+}
+
+//TODO Implementation
+//
+//TODO Documentation
+func (t *Tree) DeleteAndReconstruct(data ...Datum) {
+	panic("Unimplemented")
+}
+
+//TODO Implementation
+//
+//TODO Documentation
+type TreeLeaf struct {
+	Digest          []byte
+	SerializedDatum []byte
+}
+
+//TODO Implementation
+//
+//TODO Documentation
+func (t *Tree) Leaves() []TreeLeaf {
+	panic("Unimplemented")
 }
 
 func calculateMerkleNumbers(numLeaves int) (numMerkleNodes int, mns []int) {
@@ -132,4 +228,10 @@ func calculateMerkleNumbers(numLeaves int) (numMerkleNodes int, mns []int) {
 		numMerkleNodes += numLeaves
 	}
 	return
+}
+
+type treeLeaf struct {
+	digest    []byte
+	datum     []byte
+	orderedID uint
 }
