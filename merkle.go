@@ -288,6 +288,8 @@ func (t *Tree) verify(currentIndex int) (bool, error) {
 	return true, nil
 }
 
+// AppendAndReconstruct
+//
 //TODO Implementation
 //
 //TODO Documentation
@@ -295,6 +297,8 @@ func (t *Tree) AppendAndReconstruct(data ...Datum) {
 	panic("Unimplemented")
 }
 
+// DeleteAndReconstruct
+//
 //TODO Implementation
 //
 //TODO Documentation
