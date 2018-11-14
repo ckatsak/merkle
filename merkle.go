@@ -1,23 +1,24 @@
-// Package merkle implements a very simple, immutable, in-memory, "hash
-// function-agnostic" and "stored data-agnostic" merkle tree.
+// Package merkle implements a very simple, immutable, in-memory, generic,
+// "hash function-agnostic" merkle tree.
 package merkle
 
 import (
 	"bytes"
 	"crypto"
+	"hash"
 	"sort"
 )
 
 // Datum is the interface that any piece of data has to implement so as to be
 // able to be contained in the leaves of the merkle tree.
 type Datum interface {
-	// Serialize provides a serialized format of the entity.
+	// Serialize must return a serialized representation of the Datum.
 	Serialize() []byte
 }
 
 type (
 	// ErrHashUnavailable signifies that the requested hash function has
-	// not been linked to the executable.
+	// not been linked into the binary.
 	ErrHashUnavailable struct{}
 
 	// ErrNoData signifies that the piece of data requested is either nil
@@ -78,11 +79,11 @@ func (t *Tree) MerkleRoot() []byte {
 	return t.mns[0][0]
 }
 
-// NewTree creates a new merkle tree given one of the known hash functions and
-// a bunch of data.
+// NewTree creates a new merkle tree given one of the available (i.e. linked
+// into the binary) hash functions and a bunch of data.
 //
 // It returns a non-nil error either if the requested hash function has not
-// been linked to the executable, or if data are not given at all.
+// been linked into the binary, or if data are not given at all.
 func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	if !hash.Available() {
 		return nil, ErrHashUnavailable{}
@@ -92,66 +93,31 @@ func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	if len(data) == 0 {
 		return nil, ErrNoData{}
 	}
-
-	// Create the leaves.
-	tls := make([]treeLeaf, 0, len(data))
-	for i := range data {
-		serializedDatum := data[i].Serialize()
-		h.Reset()
-		h.Write(serializedDatum)
-		tls = append(tls, treeLeaf{
-			digest:    h.Sum(nil),
-			datum:     serializedDatum,
-			orderedID: uint(i),
-		})
-	}
-	sort.Slice(tls, func(i, j int) bool {
-		return bytes.Compare(tls[i].datum, tls[j].datum) == -1
-	})
-
-	// Create the merkle nodes.
-	numMerkleNodes, rowSizes := calculateMerkleNumbers(len(data))
-	mnsSeq := make([]byte, 0, h.Size()*numMerkleNodes)
-	mns := make([][][]byte, len(rowSizes))
-	// mns[0][0] --> ROOT
-	// mns[1][0] mns[1][1]
-	// mns[2][0] mns[2][1] mns[2][2] mns[2][3]
-	// mns[3][0] mns[3][1] mns[3][2] mns[3][3] mns[3][4] mns[3][5] mns[3][6] mns[3][7]
-	//  . . .
-	mnCount := 0
-	for i := 0; i < len(rowSizes); i++ {
-		mns[i] = make([][]byte, rowSizes[len(rowSizes)-1-i])
-		for j := 0; j < rowSizes[len(rowSizes)-1-i]; j++ {
-			mns[i][j] = mnsSeq[mnCount*h.Size() : (mnCount+1)*h.Size()]
-			if i == len(rowSizes)-1 {
-				h.Reset()
-				h.Write(tls[2*j].digest)
-				if 2*j+1 < len(tls) {
-					h.Write(tls[2*j+1].digest)
-				}
-				digest := h.Sum(nil)
-				copy(mns[i][j], digest)
-			}
-			mnCount += 1
-		}
-	}
-	for i := len(rowSizes) - 2; i >= 0; i-- {
-		for j := 0; j < rowSizes[len(rowSizes)-1-i]; j++ {
-			h.Reset()
-			h.Write(mns[i+1][2*j])
-			if 2*j+1 < len(mns[i+1]) {
-				h.Write(mns[i+1][2*j+1])
-			}
-			digest := h.Sum(nil)
-			copy(mns[i][j], digest)
-		}
-	}
+	// Create the leaves...
+	tls := appendTreeLeaves(h, nil, data)
+	// ...and construct the merkle nodes above them.
+	mns := constructMerkleNodes(h, tls)
 
 	return &Tree{
 		hash: hash,
 		mns:  mns,
 		tls:  tls,
 	}, nil
+}
+
+// AppendAndReconstruct appends the given data as new tree leaves, and
+// reconstructs the merkle tree to take them into account as well.
+//
+// This obviously modifies the merkle root of the tree.
+func (t *Tree) AppendAndReconstruct(data ...Datum) {
+	if len(data) == 0 {
+		return
+	}
+	h := t.hash.New()
+	// Append the new leaves...
+	t.tls = appendTreeLeaves(h, t.tls, data)
+	// ...and reconstruct the merkle nodes above them.
+	t.mns = constructMerkleNodes(h, t.tls)
 }
 
 // VerifyDigest verifies that the given (leaf) hash digest is present in the
@@ -288,15 +254,6 @@ func (t *Tree) verify(currentIndex int) (bool, error) {
 	return true, nil
 }
 
-// AppendAndReconstruct
-//
-//TODO Implementation
-//
-//TODO Documentation
-func (t *Tree) AppendAndReconstruct(data ...Datum) {
-	panic("Unimplemented")
-}
-
 // DeleteAndReconstruct
 //
 //TODO Implementation
@@ -324,6 +281,65 @@ func (t *Tree) Leaves() [][]byte {
 		currentIndex += len(tls2[i].datum)
 	}
 	return ret
+}
+
+func appendTreeLeaves(h hash.Hash, oldTreeLeaves []treeLeaf, newData []Datum) (newTreeLeaves []treeLeaf) {
+	newTreeLeaves = make([]treeLeaf, len(oldTreeLeaves), len(oldTreeLeaves)+len(newData))
+	copy(newTreeLeaves, oldTreeLeaves)
+	for i := range newData {
+		serializedDatum := newData[i].Serialize()
+		h.Reset()
+		h.Write(serializedDatum)
+		newTreeLeaves = append(newTreeLeaves, treeLeaf{
+			digest:    h.Sum(nil),
+			datum:     serializedDatum,
+			orderedID: uint(len(oldTreeLeaves) + i),
+		})
+	}
+	sort.Slice(newTreeLeaves, func(i, j int) bool {
+		return bytes.Compare(newTreeLeaves[i].datum, newTreeLeaves[j].datum) == -1
+	})
+	return
+}
+
+// mns[0][0] --> ROOT
+// mns[1][0] mns[1][1]
+// mns[2][0] mns[2][1] mns[2][2] mns[2][3]
+// mns[3][0] mns[3][1] mns[3][2] mns[3][3] mns[3][4] mns[3][5] mns[3][6] mns[3][7]
+//  . . .
+func constructMerkleNodes(h hash.Hash, tls []treeLeaf) (mns [][][]byte) {
+	numMerkleNodes, rowSizes := calculateMerkleNumbers(len(tls))
+	mnsSeq := make([]byte, 0, h.Size()*numMerkleNodes)
+	mns = make([][][]byte, len(rowSizes))
+	mnCount := 0
+	for i := 0; i < len(rowSizes); i++ {
+		mns[i] = make([][]byte, rowSizes[len(rowSizes)-1-i])
+		for j := 0; j < rowSizes[len(rowSizes)-1-i]; j++ {
+			mns[i][j] = mnsSeq[mnCount*h.Size() : (mnCount+1)*h.Size()]
+			if i == len(rowSizes)-1 {
+				h.Reset()
+				h.Write(tls[2*j].digest)
+				if 2*j+1 < len(tls) {
+					h.Write(tls[2*j+1].digest)
+				}
+				digest := h.Sum(nil)
+				copy(mns[i][j], digest)
+			}
+			mnCount += 1
+		}
+	}
+	for i := len(rowSizes) - 2; i >= 0; i-- {
+		for j := 0; j < rowSizes[len(rowSizes)-1-i]; j++ {
+			h.Reset()
+			h.Write(mns[i+1][2*j])
+			if 2*j+1 < len(mns[i+1]) {
+				h.Write(mns[i+1][2*j+1])
+			}
+			digest := h.Sum(nil)
+			copy(mns[i][j], digest)
+		}
+	}
+	return
 }
 
 func calculateMerkleNumbers(numLeaves int) (numMerkleNodes int, mns []int) {

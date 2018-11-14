@@ -5,4 +5,10 @@
 [![GoCover](http://gocover.io/_badge/github.com/ckatsak/merkle)](http://gocover.io/github.com/ckatsak/merkle)
 
 
-Package merkle implements a very simple, immutable, in-memory, "hash function-agnostic" and "stored data-agnostic" merkle tree.
+Package merkle implements a very simple, immutable, in-memory, generic, "hash function-agnostic" merkle tree.
+
+It is a work in progress.
+
+Documentation is provided [here][1].
+
+[1]:https://godoc.org/github.com/ckatsak/merkle
