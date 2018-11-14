@@ -99,3 +99,19 @@ func TestVerify00(t *testing.T) {
 	}
 	t.Logf("\t\t\t%v", v)
 }
+
+func TestLeaves00(t *testing.T) {
+	tree, err := NewTree(crypto.SHA256, words...)
+	if err != nil {
+		panic(err)
+	}
+	t.Logf("tree.MerkleRoot(): %x", tree.MerkleRoot())
+	t.Log("tree.Height():", tree.Height())
+	t.Log("tree.Size():", tree.Size())
+	t.Log("tree.MerkleSize():", tree.MerkleSize())
+	t.Log("tree.NumLeaves():", tree.NumLeaves())
+
+	for i, serializedDatum := range tree.Leaves() {
+		t.Logf("%2d. %s", i, serializedDatum)
+	}
+}

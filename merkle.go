@@ -160,7 +160,6 @@ func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 // It requires O(L) search among the leaves and O(log2(L)) hash calculations.
 //
 // If the given hash digest cannot be verified, VerifyDigest returns false.
-//
 // If the given hash digest cannot be found in one of the merkle tree's leaves,
 // VerifyDigest returns false and a non-nil error value.
 func (t *Tree) VerifyDigest(digest []byte) (bool, error) {
@@ -179,7 +178,6 @@ func (t *Tree) VerifyDigest(digest []byte) (bool, error) {
 // It requires O(L) search among the leaves and O(log2(L)) hash calculations.
 //
 // If the given hash digest cannot be verified, VerifyOrderedID returns false.
-//
 // If the given hash digest cannot be found in one of the merkle tree's leaves,
 // VerifyOrderedID returns false and a non-nil error value.
 func (t *Tree) VerifyOrderedID(orderedID uint) (bool, error) {
@@ -200,7 +198,6 @@ func (t *Tree) VerifyOrderedID(orderedID uint) (bool, error) {
 //
 // If the given hash digest cannot be verified, VerifySerializedDatum returns
 // false.
-//
 // If the given hash digest cannot be found in one of the merkle tree's leaves,
 // VerifySerializedDatum returns false and a non-nil error value.
 func (t *Tree) VerifySerializedDatum(serializedDatum []byte) (bool, error) {
@@ -220,7 +217,6 @@ func (t *Tree) VerifySerializedDatum(serializedDatum []byte) (bool, error) {
 // calculations.
 //
 // If the given hash digest cannot be verified, VerifyDatum returns false.
-//
 // If the given hash digest cannot be found in one of the merkle tree's leaves,
 // VerifyDatum returns false and a non-nil error value.
 func (t *Tree) VerifyDatum(datum Datum) (bool, error) {
@@ -306,19 +302,24 @@ func (t *Tree) DeleteAndReconstruct(data ...Datum) {
 	panic("Unimplemented")
 }
 
-//TODO Implementation
-//
-//TODO Documentation
-type TreeLeaf struct {
-	Digest          []byte
-	SerializedDatum []byte
-}
+// Leaves returns a slice of all pieces of Data stored in the merkle tree (in
+// their serialized format) in the order that they were inserted by the user.
+func (t *Tree) Leaves() [][]byte {
+	tls2 := make([]treeLeaf, len(t.tls))
+	copy(tls2, t.tls)
+	sort.Slice(tls2, func(i, j int) bool {
+		return tls2[i].orderedID < tls2[j].orderedID
+	})
 
-//TODO Implementation
-//
-//TODO Documentation
-func (t *Tree) Leaves() []TreeLeaf {
-	panic("Unimplemented")
+	ret := make([][]byte, len(tls2))
+	retSeq := make([]byte, 0)
+	currentIndex := 0
+	for i := range tls2 {
+		retSeq = append(retSeq, tls2[i].datum...)
+		ret[i] = retSeq[currentIndex : currentIndex+len(tls2[i].datum)]
+		currentIndex += len(tls2[i].datum)
+	}
+	return ret
 }
 
 func calculateMerkleNumbers(numLeaves int) (numMerkleNodes int, mns []int) {
