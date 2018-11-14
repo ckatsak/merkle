@@ -140,7 +140,7 @@ func TestAppendReconstruct00(t *testing.T) {
 	t.Log("tree.MerkleSize():", tree.MerkleSize())
 	t.Log("tree.NumLeaves():", tree.NumLeaves())
 
-	var nilData []Datum = nil
+	var nilData []Datum
 	tree.AppendAndReconstruct(nilData...)
 
 	t.Logf("")
@@ -198,6 +198,82 @@ func TestAppendReconstruct01(t *testing.T) {
 		t.Logf("\t\t\t%v", v)
 	}
 	for _, word := range enAlphabetCap {
+		t.Logf("Verifying \"%s\"...", word)
+		if v, err = tree.VerifyDatum(word); err != nil {
+			t.Logf("ERROR while verifying \"%s\": (%v, %v)", word, v, err)
+		}
+		t.Logf("\t\t\t%v", v)
+	}
+	t.Logf("Verifying \"%s\"...", kk)
+	if v, err = tree.VerifyDatum(kk); err == nil {
+		t.Fatalf("ERROR while verifying \"%s\": (%v, %v)", kk, v, err)
+	}
+	t.Logf("\t\t\t%v", v)
+}
+
+func TestDeleteAndReconstruct00(t *testing.T) {
+	tree, err := NewTree(crypto.SHA256, grAlphabet...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("BEFORE THE DELETIONS:")
+	t.Logf("tree.MerkleRoot(): %x", tree.MerkleRoot())
+	t.Log("tree.Height():", tree.Height())
+	t.Log("tree.Size():", tree.Size())
+	t.Log("tree.MerkleSize():", tree.MerkleSize())
+	t.Log("tree.NumLeaves():", tree.NumLeaves())
+
+	var nilData []Datum
+	tree.DeleteAndReconstruct(nilData...)
+
+	t.Logf("")
+	t.Logf("AFTER THE DELETIONS:")
+	t.Logf("tree.MerkleRoot(): %x", tree.MerkleRoot())
+	t.Log("tree.Height():", tree.Height())
+	t.Log("tree.Size():", tree.Size())
+	t.Log("tree.MerkleSize():", tree.MerkleSize())
+	t.Log("tree.NumLeaves():", tree.NumLeaves())
+}
+func TestDeleteAndReconstruct01(t *testing.T) {
+	tree, err := NewTree(crypto.SHA256, grAlphabet...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("BEFORE THE DELETIONS:")
+	t.Logf("tree.MerkleRoot(): %x", tree.MerkleRoot())
+	t.Log("tree.Height():", tree.Height())
+	t.Log("tree.Size():", tree.Size())
+	t.Log("tree.MerkleSize():", tree.MerkleSize())
+	t.Log("tree.NumLeaves():", tree.NumLeaves())
+
+	tree.DeleteAndReconstruct(grAlphabet[12:]...)
+
+	t.Logf("")
+	t.Logf("AFTER THE DELETIONS:")
+	t.Logf("tree.MerkleRoot(): %x", tree.MerkleRoot())
+	t.Log("tree.Height():", tree.Height())
+	t.Log("tree.Size():", tree.Size())
+	t.Log("tree.MerkleSize():", tree.MerkleSize())
+	t.Log("tree.NumLeaves():", tree.NumLeaves())
+
+	// Print the tree.
+	for i := 0; i < tree.Height()-1; i++ {
+		for j := 0; j < len(tree.mns[i]); j++ {
+			t.Logf("(i=%2d,j=%2d)%s%x", i, j, strings.Repeat(" ", (i+1)*4), tree.mns[i][j])
+		}
+	}
+	for i := 0; i < len(tree.tls); i++ {
+		t.Logf("%x (\"%s\")", tree.tls[i].digest, tree.tls[i].datum)
+	}
+
+	// Print the leaves.
+	for i, serializedDatum := range tree.Leaves() {
+		t.Logf("%2d. %s", i, serializedDatum)
+	}
+
+	// Verify stuff
+	var v bool
+	for _, word := range grAlphabet {
 		t.Logf("Verifying \"%s\"...", word)
 		if v, err = tree.VerifyDatum(word); err != nil {
 			t.Logf("ERROR while verifying \"%s\": (%v, %v)", word, v, err)

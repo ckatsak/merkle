@@ -120,6 +120,20 @@ func (t *Tree) AppendAndReconstruct(data ...Datum) {
 	t.mns = constructMerkleNodes(h, t.tls)
 }
 
+// DeleteAndReconstruct deletes the given data from the tree leaves, and
+// reconstructs the merkle tree on the new (reduced) number of leaves.
+//
+// This obviously modifies the merkle root of the tree.
+func (t *Tree) DeleteAndReconstruct(data ...Datum) {
+	if len(data) == 0 {
+		return
+	}
+	// Delete the appropriate leaves...
+	t.tls = deleteTreeLeaves(t.tls, data)
+	// ...and reconstruct the merkle nodes above the remaining ones.
+	t.mns = constructMerkleNodes(t.hash.New(), t.tls)
+}
+
 // VerifyDigest verifies that the given (leaf) hash digest is present in the
 // merkle tree, in which case it returns true and a nil error value.
 //
@@ -254,15 +268,6 @@ func (t *Tree) verify(currentIndex int) (bool, error) {
 	return true, nil
 }
 
-// DeleteAndReconstruct
-//
-//TODO Implementation
-//
-//TODO Documentation
-func (t *Tree) DeleteAndReconstruct(data ...Datum) {
-	panic("Unimplemented")
-}
-
 // Leaves returns a slice of all pieces of Data stored in the merkle tree (in
 // their serialized format) in the order that they were inserted by the user.
 func (t *Tree) Leaves() [][]byte {
@@ -296,6 +301,41 @@ func appendTreeLeaves(h hash.Hash, oldTreeLeaves []treeLeaf, newData []Datum) (n
 			orderedID: uint(len(oldTreeLeaves) + i),
 		})
 	}
+	sort.Slice(newTreeLeaves, func(i, j int) bool {
+		return bytes.Compare(newTreeLeaves[i].datum, newTreeLeaves[j].datum) == -1
+	})
+	return
+}
+
+func deleteTreeLeaves(oldTreeLeaves []treeLeaf, delData []Datum) (newTreeLeaves []treeLeaf) {
+	// Serialize all data to be deleted.
+	delSerializedData := make([][]byte, 0, len(delData))
+	for i := range delData {
+		delSerializedData = append(delSerializedData, delData[i].Serialize())
+	}
+	// Create a copy of oldTreeLeaves to process it.
+	oldTls := make([]treeLeaf, len(oldTreeLeaves))
+	copy(oldTls, oldTreeLeaves)
+	// Find each of the serializedData to be deleted and remove them from the copy.
+	for i := range delSerializedData {
+		j := sort.Search(len(oldTls), func(k int) bool {
+			return bytes.Compare(oldTls[k].datum, delSerializedData[i]) >= 0
+		})
+		if j < len(oldTls) && bytes.Compare(oldTls[j].datum, delSerializedData[i]) == 0 {
+			oldTls = append(oldTls[:j], oldTls[j+1:]...)
+		}
+	}
+	// Sort oldTls by orderedID, and reset the orderedIDs.
+	sort.Slice(oldTls, func(i, j int) bool {
+		return oldTls[i].orderedID < oldTls[j].orderedID
+	})
+	for i := range oldTls {
+		oldTls[i].orderedID = uint(i)
+	}
+	// Copy oldTls to a new slice to avoid wasting capacity.
+	newTreeLeaves = make([]treeLeaf, len(oldTreeLeaves)-len(delData))
+	copy(newTreeLeaves, oldTls)
+	// Finally, sort newTreeLeaves by serializedDatum again.
 	sort.Slice(newTreeLeaves, func(i, j int) bool {
 		return bytes.Compare(newTreeLeaves[i].datum, newTreeLeaves[j].datum) == -1
 	})
