@@ -8,43 +8,59 @@ import (
 	"sort"
 )
 
-//TODO Documentation
+// Datum is the interface that any piece of data has to implement so as to be
+// able to be contained in the leaves of the merkle tree.
 type Datum interface {
+	// Serialize provides a serialized format of the entity.
 	Serialize() []byte
 }
 
-//TODO Documentation
-type ErrHashUnavailable struct{}
+type (
+	// ErrHashUnavailable signifies that the requested hash function has
+	// not been linked to the executable.
+	ErrHashUnavailable struct{}
+
+	// ErrNoData signifies that the piece of data requested is either nil
+	// or not present in the merkle tree.
+	ErrNoData struct{}
+)
 
 func (ErrHashUnavailable) Error() string {
 	return "Hash Algorithm Unavailable"
 }
-
-//TODO Documentation
-type ErrNoData struct{}
-
 func (ErrNoData) Error() string {
 	return "Nonexistent Data"
 }
 
-//TODO Documentation
-type Tree struct {
-	hash crypto.Hash
-	mns  [][][]byte
-	tls  []treeLeaf
-}
+type (
+	// Tree is the exported struct to interact with the merkle tree.
+	Tree struct {
+		hash crypto.Hash
+		mns  [][][]byte
+		tls  []treeLeaf
+	}
 
-//TODO Documentation
+	treeLeaf struct {
+		digest    []byte
+		datum     []byte
+		orderedID uint
+	}
+)
+
+// Height returns the height of the merkle tree, including both its leaves and
+// the merkle nodes.
 func (t *Tree) Height() int {
 	return len(t.mns) + 1
 }
 
-//TODO Documentation
+// Size returns the total number of nodes in the merkle tree, including both
+// its leaves and the merkle nodes.
 func (t *Tree) Size() int {
 	return t.MerkleSize() + t.NumLeaves()
 }
 
-//TODO Documentation
+// MerkleSize returns the number of merkle nodes in the merkle trees, i.e. the
+// total number of nodes in the merkle tree, excluding its leaves.
 func (t *Tree) MerkleSize() (merkleSize int) {
 	for i := range t.mns {
 		merkleSize += len(t.mns[i])
@@ -52,17 +68,21 @@ func (t *Tree) MerkleSize() (merkleSize int) {
 	return
 }
 
-//TODO Documentation
+// NumLeaves returns the number of leaves in the merkle tree.
 func (t *Tree) NumLeaves() (numLeaves int) {
 	return len(t.tls)
 }
 
-//TODO Documentation
+// MerkleRoot returns the hash digest of the root of the merkle tree.
 func (t *Tree) MerkleRoot() []byte {
 	return t.mns[0][0]
 }
 
-//TODO Documentation
+// NewTree creates a new merkle tree given one of the known hash functions and
+// a bunch of data.
+//
+// It returns a non-nil error either if the requested hash function has not
+// been linked to the executable, or if data are not given at all.
 func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	if !hash.Available() {
 		return nil, ErrHashUnavailable{}
@@ -134,7 +154,15 @@ func NewTree(hash crypto.Hash, data ...Datum) (*Tree, error) {
 	}, nil
 }
 
-//TODO Documentation
+// VerifyDigest verifies that the given (leaf) hash digest is present in the
+// merkle tree, in which case it returns true and a nil error value.
+//
+// It requires O(L) search among the leaves and O(log2(L)) hash calculations.
+//
+// If the given hash digest cannot be verified, VerifyDigest returns false.
+//
+// If the given hash digest cannot be found in one of the merkle tree's leaves,
+// VerifyDigest returns false and a non-nil error value.
 func (t *Tree) VerifyDigest(digest []byte) (bool, error) {
 	for leafIndex := range t.tls {
 		if bytes.Compare(digest, t.tls[leafIndex].datum) == 0 {
@@ -144,7 +172,16 @@ func (t *Tree) VerifyDigest(digest []byte) (bool, error) {
 	return false, ErrNoData{}
 }
 
-//TODO Documentation
+// VerifyOrderedID verifies that the Datum with the given ordered ID (based on
+// the order that the leaves were initially given) is present in the merkle
+// tree, in which case it returns true and a nil error value.
+//
+// It requires O(L) search among the leaves and O(log2(L)) hash calculations.
+//
+// If the given hash digest cannot be verified, VerifyOrderedID returns false.
+//
+// If the given hash digest cannot be found in one of the merkle tree's leaves,
+// VerifyOrderedID returns false and a non-nil error value.
 func (t *Tree) VerifyOrderedID(orderedID uint) (bool, error) {
 	for leafIndex := range t.tls {
 		if t.tls[leafIndex].orderedID == orderedID {
@@ -154,18 +191,38 @@ func (t *Tree) VerifyOrderedID(orderedID uint) (bool, error) {
 	return false, ErrNoData{}
 }
 
-//TODO Documentation
+// VerifySerializedDatum verifies that the given Datum (given in its serialized
+// format) is present in the merkle tree, in which case it returns true and a
+// nil error value.
+//
+// It requires O(log2(L)) search among the leaves and O(log2(L)) hash
+// calculations.
+//
+// If the given hash digest cannot be verified, VerifySerializedDatum returns
+// false.
+//
+// If the given hash digest cannot be found in one of the merkle tree's leaves,
+// VerifySerializedDatum returns false and a non-nil error value.
 func (t *Tree) VerifySerializedDatum(serializedDatum []byte) (bool, error) {
 	leafIndex := sort.Search(len(t.tls), func(i int) bool {
-		return bytes.Compare(t.tls[i].datum, serializedDatum) == 0
+		return bytes.Compare(t.tls[i].datum, serializedDatum) >= 0
 	})
-	if leafIndex < len(t.tls) {
+	if leafIndex < len(t.tls) && bytes.Compare(t.tls[leafIndex].datum, serializedDatum) == 0 {
 		return t.verify(leafIndex)
 	}
 	return false, ErrNoData{}
 }
 
-//TODO Documentation
+// VerifyDatum verifies that the given Datum is present in the merkle tree, in
+// which case it returns true and a nil error value.
+//
+// It requires O(log2(L)) search among the leaves and O(log2(L)) hash
+// calculations.
+//
+// If the given hash digest cannot be verified, VerifyDatum returns false.
+//
+// If the given hash digest cannot be found in one of the merkle tree's leaves,
+// VerifyDatum returns false and a non-nil error value.
 func (t *Tree) VerifyDatum(datum Datum) (bool, error) {
 	if datum == nil {
 		return false, ErrNoData{}
@@ -173,19 +230,66 @@ func (t *Tree) VerifyDatum(datum Datum) (bool, error) {
 	return t.VerifySerializedDatum(datum.Serialize())
 }
 
-// TODO Implementation
-func (t *Tree) verify(leafIndex int) (bool, error) {
-	panic("Unimplemented")
-	currentLevel := len(t.mns)
-
+func (t *Tree) verify(currentIndex int) (bool, error) {
 	h := t.hash.New()
+	h.Write(t.tls[currentIndex].datum)
+	currentDigest := h.Sum(nil)
+
+	var (
+		siblingDigest, parentDigest []byte
+		parentIndex                 int
+		first, second               []byte
+	)
+	// Verify leaf.
+	if currentIndex%2 == 0 {
+		if currentIndex < len(t.tls)-1 {
+			siblingDigest = t.tls[currentIndex+1].digest
+		} else {
+			siblingDigest = []byte{}
+		}
+		parentIndex = currentIndex / 2
+		parentDigest = t.mns[len(t.mns)-1][parentIndex]
+		first, second = currentDigest, siblingDigest
+	} else {
+		siblingDigest = t.tls[currentIndex-1].digest
+		parentIndex = (currentIndex - 1) / 2
+		parentDigest = t.mns[len(t.mns)-1][parentIndex]
+		first, second = siblingDigest, currentDigest
+	}
 	h.Reset()
-	h.Write(t.tls[leafIndex].datum)
-	leafDigest := h.Sum(nil)
+	h.Write(first)
+	h.Write(second)
+	if bytes.Compare(parentDigest, h.Sum(nil)) != 0 {
+		return false, nil
+	}
 
-	_, _ = leafDigest, currentLevel
+	// Verify merkle path.
+	for currentLevel := len(t.mns) - 1; currentLevel > 0; currentLevel-- {
+		currentIndex, currentDigest = parentIndex, parentDigest
+		if currentIndex%2 == 0 {
+			if currentIndex < len(t.mns[currentLevel])-1 {
+				siblingDigest = t.mns[currentLevel][currentIndex+1]
+			} else {
+				siblingDigest = []byte{}
+			}
+			parentIndex = currentIndex / 2
+			parentDigest = t.mns[currentLevel-1][parentIndex]
+			first, second = currentDigest, siblingDigest
+		} else {
+			siblingDigest = t.mns[currentLevel][currentIndex-1]
+			parentIndex = (currentIndex - 1) / 2
+			parentDigest = t.mns[currentLevel-1][parentIndex]
+			first, second = siblingDigest, currentDigest
+		}
+		h.Reset()
+		h.Write(first)
+		h.Write(second)
+		if bytes.Compare(parentDigest, h.Sum(nil)) != 0 {
+			return false, nil
+		}
+	}
 
-	return false, nil
+	return true, nil
 }
 
 //TODO Implementation
@@ -228,10 +332,4 @@ func calculateMerkleNumbers(numLeaves int) (numMerkleNodes int, mns []int) {
 		numMerkleNodes += numLeaves
 	}
 	return
-}
-
-type treeLeaf struct {
-	digest    []byte
-	datum     []byte
-	orderedID uint
 }
